@@ -28,7 +28,10 @@ export const FACTORS = {
 };
 
 const FEE = 0.0005; // taker fee per side
-export const BREAKEVEN_P = 1 / (1 + 1.5); // TP1 = 1.5R, SL = 1R
+export const BREAKEVEN_P = 1 / (1 + 1.5); // TP1 = 1.5R, SL = 1R (strategies with another target have their own)
+const MIN_TEST_TRADES = 8;
+const BASE_THRESHOLD = 0.25; // journal.js default learning threshold
+const MIN_STRATEGY_SCORE = 0.15; // strategies.js MIN_SCORE
 
 // ---------- news sentiment ----------
 const COIN_NAMES = {
@@ -155,39 +158,53 @@ export function pnlFor({ side, entry, leverage, margin }, exits) {
 }
 
 // ---------- trade plan ----------
-function buildPlan({ side, k, a, e20, piv, leverage, margin, mmr, style, decimals }) {
+// Entry, stop and targets for one side. Shared by the live plan and the history check so both use the same rules.
+// entryMode 'auto' waits for a pullback when price is stretched; 'market' always enters now.
+// slMode 'structure' puts the stop past the nearest swing point; 'extreme' past the last 5 candles' extreme (fades).
+export function planLevels({ side, k, a, e20, piv, tpR = 1.5, entryMode = 'auto', slMode = 'structure' }) {
   const dir = side === 'LONG' ? 1 : -1;
   const c = k.at(-1).c;
   const n = k.length;
-  const round = (v) => +v.toFixed(decimals);
   const ext = ((c - e20) * dir) / a; // how far price already ran in our direction, in ATR
 
   let entry = c, mode = 'market';
-  if (ext > 1.5) {
+  if (entryMode === 'auto' && ext > 1.5) {
     entry = c - dir * Math.min(1.0 * a, (c - e20) * dir * 0.5);
     mode = 'limit';
   }
 
-  const recentLows = piv.lows.filter((p) => p.i > n - 60).map((p) => p.price);
-  const recentHighs = piv.highs.filter((p) => p.i > n - 60).map((p) => p.price);
   let sl, structural = false;
-  if (dir > 0) {
-    const cands = recentLows.filter((p) => p < entry - 0.3 * a && p > entry - 3 * a);
+  if (slMode === 'extreme') {
+    const recent = k.slice(-5);
+    const extreme = dir > 0 ? Math.min(...recent.map((x) => x.l)) : Math.max(...recent.map((x) => x.h));
+    const dist = clamp(Math.abs(entry - extreme) + 0.3 * a, 1.0 * a, 3 * a);
+    sl = entry - dir * dist;
+    structural = true;
+  } else if (dir > 0) {
+    const cands = piv.lows.filter((p) => p.i > n - 60).map((p) => p.price).filter((p) => p < entry - 0.3 * a && p > entry - 3 * a);
     if (cands.length) { sl = Math.max(...cands) - 0.3 * a; structural = true; } else sl = entry - 1.5 * a;
     if (entry - sl < 0.8 * a) sl = entry - 0.8 * a;
   } else {
-    const cands = recentHighs.filter((p) => p > entry + 0.3 * a && p < entry + 3 * a);
+    const cands = piv.highs.filter((p) => p.i > n - 60).map((p) => p.price).filter((p) => p > entry + 0.3 * a && p < entry + 3 * a);
     if (cands.length) { sl = Math.min(...cands) + 0.3 * a; structural = true; } else sl = entry + 1.5 * a;
     if (sl - entry < 0.8 * a) sl = entry + 0.8 * a;
   }
   const risk = Math.abs(entry - sl);
-  let tp1 = entry + dir * 1.5 * risk;
-  let tp2 = entry + dir * 2.5 * risk;
+  const tp1 = entry + dir * tpR * risk;
+  const tp2 = entry + dir * (tpR + 1) * risk;
 
   // Opposite swing levels sitting between entry and TP1 can stall the move
   const lookback = piv[dir > 0 ? 'highs' : 'lows'].filter((p) => p.i > n - 100).map((p) => p.price);
   const blockers = lookback.filter((p) => (dir > 0 ? p > entry && p < tp1 : p < entry && p > tp1));
   const obstacle = blockers.length ? (dir > 0 ? Math.min(...blockers) : Math.max(...blockers)) : null;
+  return { dir, mode, entry, sl, tp1, tp2, ext, structural, obstacle, risk, tpR };
+}
+
+function buildPlan({ side, k, a, e20, piv, leverage, margin, mmr, style, decimals, strategy }) {
+  const round = (v) => +v.toFixed(decimals);
+  const lv = planLevels({ side, k, a, e20, piv, tpR: strategy?.tpR, entryMode: strategy?.entryMode, slMode: strategy?.slMode });
+  const { dir, mode, ext, structural, obstacle, risk } = lv;
+  let { entry, sl, tp1, tp2 } = lv;
 
   entry = round(entry); sl = round(sl); tp1 = round(tp1); tp2 = round(tp2);
   const liq = round(dir > 0 ? entry * (1 - 1 / leverage + mmr) : entry * (1 + 1 / leverage - mmr));
@@ -211,14 +228,14 @@ function buildPlan({ side, k, a, e20, piv, leverage, margin, mmr, style, decimal
   money.roeSl = money.pnlSl / margin;
 
   return {
-    side, dir, mode, entry, sl, tp1, tp2, liq, ext, structural, obstacle, risk, slPct, liqPct, maxSafeLev, mmr,
+    side, dir, mode, entry, sl, tp1, tp2, liq, ext, structural, obstacle, risk, slPct, liqPct, maxSafeLev, mmr, tpR: lv.tpR,
     tp1Pct: Math.abs(tp1 - entry) / entry, tp2Pct: Math.abs(tp2 - entry) / entry,
     money, holdHours: (style.holdCandles * style.tfMs) / 3600e3,
   };
 }
 
 // ---------- main ----------
-export function analyze({ meta, style, leverage, margin, forcedSide, data, learning, calib, history }) {
+export function analyze({ meta, style, leverage, margin, forcedSide, data, learning, calib, history, strategy, selection }) {
   const now = Date.now();
   const { k, hk } = data;
   const closes = k.map((x) => x.c);
@@ -411,14 +428,15 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
   const S = wSum ? active.reduce((s, f) => s + f.w * f.s, 0) / wSum : 0;
   const adxMult = adxNow == null ? 0.9 : adxNow < 18 ? 0.75 : adxNow < 25 ? 0.9 : 1;
   const autoSide = S >= 0 ? 'LONG' : 'SHORT';
-  const side = forcedSide || autoSide;
+  // A chosen strategy (strategies.js) decides the side; otherwise the user's choice or the factor score does.
+  const side = strategy?.side || forcedSide || autoSide;
   const dir = side === 'LONG' ? 1 : -1;
   const edge = S * dir;
   const agree = active.filter((f) => f.s * dir > 0.1).length;
   const against = active.filter((f) => f.s * dir < -0.1).length;
 
   const mmr = ['BTCUSDT', 'ETHUSDT'].includes(meta.symbol) ? 0.004 : 0.005;
-  const plan = buildPlan({ side, k, a, e20: tMain.e20, piv, leverage, margin, mmr, style, decimals: meta.decimals });
+  const plan = buildPlan({ side, k, a, e20: tMain.e20, piv, leverage, margin, mmr, style, decimals: meta.decimals, strategy });
 
   const fOf = (key) => factors.find((f) => f.key === key);
   const btcAlign = (fOf('btc')?.w ? fOf('btc').s : 0) * dir;
@@ -427,7 +445,7 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
   const fundingAgainst = funding != null && funding * dir >= 0.0003;
 
   // ---------- probability ----------
-  // With a history check (backtest.js) the probability is the measured past hit rate of similar signals.
+  // With a history check (backtest.js) the probability is the chosen strategy's hit rate on the newer, unseen part of history.
   // Without it, fall back to the unverified heuristic below.
   const adjustments = [];
   let p, evR, probSource;
@@ -454,7 +472,7 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
     p = (modelP * 8 + cb.wins) / (8 + cb.n);
     calibNote = `Đã hiệu chỉnh theo ${cb.n} lệnh thật của bạn cùng nhóm (thắng ${Math.round((cb.wins / cb.n) * 100)}%).`;
   }
-  if (!history || cb?.n >= 3) evR = p * 1.5 - (1 - p);
+  if (!history || cb?.n >= 3) evR = p * plan.tpR - (1 - p);
   const evUsd = evR * Math.abs(plan.money.pnlSl);
 
   // ---------- risks ----------
@@ -482,7 +500,7 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
   if (side === 'SHORT' && rNow < 28) risk('medium', 'Bán đuổi vùng quá bán', `RSI ${rNow.toFixed(0)}.`);
   if (adxNow != null && adxNow < 18) risk('medium', 'Thị trường đi ngang', `ADX ${adxNow.toFixed(0)}: tín hiệu xu hướng dễ nhiễu.`);
   if (plan.obstacle != null) risk('medium', `Vùng cản tại ${fmt(plan.obstacle)}`, `Nằm giữa entry và TP1, giá có thể bị chặn trước khi tới mục tiêu.`);
-  if (forcedSide && edge < 0) risk('high', 'Bạn chọn ngược hướng hệ thống', `Hệ thống nghiêng ${autoSide}. Lệnh ${side} đang đi ngược đa số tín hiệu.`);
+  if (forcedSide && edge < 0 && (!strategy || strategy.family === 'trend')) risk('high', 'Bạn chọn ngược hướng hệ thống', `Hệ thống nghiêng ${autoSide}. Lệnh ${side} đang đi ngược đa số tín hiệu.`);
 
   // Fed / macro headlines against the trade
   const macroF = fOf('macro');
@@ -540,23 +558,35 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
   const critical = risks.find((r) => r.level === 'critical');
   const blockingTiming = timing.find((t) => t.ok === false && t.blocking);
   const pctTxt = (v) => `${Math.round(v * 100)}%`;
+  const be = history?.be ?? 1 / (1 + plan.tpR);
+  const who = strategy ? `Chiến lược "${strategy.name}"` : `Tín hiệu ${side}`;
+  // Factor-score checks only make sense for strategies that follow the score (not for fades, which go against it).
+  const followsScore = !strategy || strategy.family === 'trend';
+  // A tested strategy already has its own entry rule, so only a threshold raised by self-learning (after losses) is added on top.
+  const requiredEdge = strategy ? (thr > BASE_THRESHOLD ? MIN_STRATEGY_SCORE + (thr - BASE_THRESHOLD) : -Infinity) : thr;
   let verdict;
-  if (!history) {
+  if (selection && !strategy) {
+    verdict = { code: 'NO', label: 'Không nên vào', reason: selection.reason };
+  } else if (!history) {
     verdict = { code: 'WAIT', label: 'Chưa kiểm chứng được', reason: 'Không tải đủ dữ liệu quá khứ để kiểm tra tín hiệu này, xác suất chỉ là ước tính.' };
-  } else if (p <= BREAKEVEN_P || evR <= 0) {
+  } else if (history.n < MIN_TEST_TRADES) {
+    verdict = { code: 'WAIT', label: 'Chưa đủ dữ liệu kiểm tra', reason: `${who} chỉ có ${history.n} lệnh trên phần dữ liệu mới, quá ít để tin.` };
+  } else if (p <= be || evR <= 0) {
     verdict = { code: 'NO', label: 'Không nên vào',
-      reason: `Trong quá khứ, tín hiệu ${side} tương tự trên ${meta.base} chạm TP1 trước SL ${pctTxt(p)} số lần (cần trên ${pctTxt(BREAKEVEN_P)}), kỳ vọng ${evR >= 0 ? '+' : ''}${evR.toFixed(2)}R mỗi lệnh.` };
-  } else if (edge < 0.08) {
+      reason: `${who}: trên dữ liệu mới, chạm TP1 trước SL ${pctTxt(p)} số lần (cần trên ${pctTxt(be)}), kỳ vọng ${evR >= 0 ? '+' : ''}${evR.toFixed(2)}R mỗi lệnh.` };
+  } else if (!strategy && edge < 0.08) {
     verdict = { code: 'NO', label: 'Không nên vào', reason: 'Tín hiệu hiện tại quá yếu hoặc trái chiều.' };
   } else if (critical) {
     verdict = { code: 'NO', label: 'Không nên vào', reason: critical.title };
-  } else if (edge < thr) {
-    verdict = { code: 'WAIT', label: 'Chờ thêm xác nhận', reason: `Điểm tín hiệu ${(edge * 100).toFixed(0)} chưa đạt ngưỡng ${(thr * 100).toFixed(0)}.` };
+  } else if (followsScore && edge < requiredEdge) {
+    verdict = { code: 'WAIT', label: 'Chờ thêm xác nhận', reason: strategy
+      ? `Sau chuỗi thua, hệ thống đã tự nâng ngưỡng: cần điểm tín hiệu ${(requiredEdge * 100).toFixed(0)}, hiện mới ${(edge * 100).toFixed(0)}.`
+      : `Điểm tín hiệu ${(edge * 100).toFixed(0)} chưa đạt ngưỡng ${(thr * 100).toFixed(0)}.` };
   } else if (plan.mode === 'limit' || blockingTiming) {
     verdict = { code: 'WAIT', label: 'Đặt lệnh chờ', reason: blockingTiming ? blockingTiming.text : `Đặt limit tại ${fmt(plan.entry)}, không vào giá thị trường.` };
   } else {
     verdict = { code: 'GO', label: side === 'LONG' ? 'Có thể vào Long' : 'Có thể vào Short',
-      reason: `Trong quá khứ, ${history.wins}/${history.n} tín hiệu ${side} tương tự chạm TP1 trước SL, kỳ vọng +${evR.toFixed(2)}R mỗi lệnh.` };
+      reason: `${who}: trên dữ liệu mới, ${history.wins}/${history.n} lần chạm TP1 trước SL (cần trên ${pctTxt(be)}), kỳ vọng +${evR.toFixed(2)}R mỗi lệnh.` };
   }
 
   // ---------- exit plan ----------
@@ -575,12 +605,14 @@ export function analyze({ meta, style, leverage, margin, forcedSide, data, learn
 
   return {
     meta, style, leverage, margin, side, autoSide, forcedSide, S, edge, adxMult, agree, against, activeCount: active.length,
-    factors, plan, prob: p, modelP, probSource, history, calibNote, adjustments, evR, evUsd, risks, timing, verdict, exitPlan, threshold: thr,
+    factors, plan, prob: p, be, modelP, probSource, history, strategy, selection, calibNote, adjustments, evR, evUsd, risks, timing, verdict, exitPlan, threshold: thr,
     price: c, atr: a, atrPct, rsi: rNow, adx: adxNow, funding, fng, fngLabel: data.fng?.data?.[0]?.value_classification,
     mcapCh, btcDom: data.global?.market_cap_percentage?.btc ?? null, quoteVol, change24h: data.ticker ? +data.ticker.priceChangePercent : null,
     lsr: data.lsr?.length ? +data.lsr.at(-1).longShortRatio : null, btcTrend, btcCorr, coinNews, marketNews, macroNews,
     ema: { e20: I.ema(closes, 20), e50: I.ema(closes, 50) }, candles: k,
     ctx: { btcAlign, newsAlign, adx: adxNow, ext: plan.ext, rsi: rNow, atrPct, fng, funding },
+    // Raw indicator values the strategies need (strategies.js), so the history check can reuse this one pass.
+    ind: { a, e20: tMain.e20, piv, rsi: rNow, pb, adx: adxNow, btcS: fOf('btc')?.w ? fOf('btc').s : 0 },
     at: now,
   };
 }

@@ -113,6 +113,7 @@ export function tradeFromAnalysis(r, fill = {}) {
     side: r.side, style: style.key, leverage, margin,
     planEntry: plan.entry, entry, sl: plan.sl, tp1: plan.tp1, tp2: plan.tp2, liq: +liq.toFixed(r.meta.decimals),
     prob: +r.prob.toFixed(3), modelP: +r.modelP.toFixed(3), edge: +r.edge.toFixed(3), verdict: r.verdict.code,
+    strategy: r.strategy?.key ?? null, be: +r.be.toFixed(3),
     riskUsd: Math.abs(pnlFor({ side: r.side, entry, leverage, margin }, [{ frac: 1, price: plan.sl }])),
     factors, ctx: Object.fromEntries(Object.entries(r.ctx).map(([k, v]) => [k, v == null ? null : +(+v).toFixed(4)])),
     status: 'open',

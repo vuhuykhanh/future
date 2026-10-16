@@ -56,17 +56,32 @@ Kết quả chỉ gồm thông tin cần để quyết định vào lệnh:
 Phía sau, app vẫn phân tích đủ 13 yếu tố (EMA 2 khung, MACD, RSI, Bollinger, dòng lệnh taker, Open Interest, funding,
 tỷ lệ Long/Short, xu hướng BTC, Fear & Greed + vốn hóa, tin tức coin và toàn thị trường) để ra kết luận, nhưng không hiển thị chi tiết.
 
-### Tỷ lệ thắng lấy từ dữ liệu quá khứ
+### Tỷ lệ thắng: chọn chiến lược trên dữ liệu cũ, kiểm tra trên dữ liệu mới
 
-Mỗi lần phân tích, app tải 1.500 nến gần nhất của chính coin và khung đó (khoảng 15 ngày với 15m, 2 tháng với 1h, 8 tháng với 4h).
-Ở từng thời điểm trong quá khứ, app chạy lại cùng bộ phân tích, lấy các tín hiệu cùng hướng và độ mạnh gần với tín hiệu hiện tại,
-rồi mô phỏng kế hoạch lệnh trên các nến tiếp theo (SL được tính trước nếu một nến chạm cả SL và TP).
+Mỗi lần phân tích, app tải 1.500 nến gần nhất của chính coin và khung đó (khoảng 15 ngày với 15m, 2 tháng với 1h, 8 tháng với 4h),
+chạy lại bộ phân tích ở từng thời điểm trong quá khứ và mô phỏng 6 chiến lược (`public/js/strategies.js`):
 
-- Con số hiển thị = tỷ lệ chạm TP1 trước SL của các tín hiệu đó. Mẫu nhỏ được kéo về tỷ lệ chung của coin để tránh con số ảo.
-- App chỉ khuyên vào lệnh khi tỷ lệ này **trên 40%** (mức hòa vốn với TP1 = 1.5R) **và** kỳ vọng lợi nhuận dương.
-- Funding, Open Interest, tỷ lệ Long/Short, tâm lý và tin tức không có dữ liệu quá khứ đủ dài, nên phần kiểm tra chỉ dùng các yếu tố giá.
-  Các yếu tố kia vẫn được dùng để chọn hướng và cảnh báo rủi ro.
-- Quá khứ không đảm bảo tương lai. Đây là con số đã kiểm chứng tốt nhất có được, không phải lời hứa.
+| Chiến lược | Chốt lời | Cần thắng để hòa vốn |
+|---|---|---|
+| Theo xu hướng | 1,5R | 40% |
+| Theo xu hướng, chốt sớm | 1R | 50% |
+| Theo xu hướng, chốt xa | 2R | 33% |
+| Theo xu hướng, chỉ vào khi giá hồi về EMA20 | 1,5R | 40% |
+| Đánh ngược khi quá mua/quá bán (RSI cực đoan + ngoài dải Bollinger) | 1,5R | 40% |
+| Theo xu hướng khi BTC cùng hướng và ADX ≥ 20 | 1,5R | 40% |
+
+(R = khoảng cách từ giá vào tới Stop Loss. Phí giao dịch và lệnh hết thời gian giữ đều được tính.)
+
+1. **Chọn** chiến lược có kỳ vọng tốt nhất trên **60% dữ liệu cũ**, trong số những chiến lược đang có tín hiệu lúc này.
+2. **Kiểm tra** đúng chiến lược đó trên **40% dữ liệu mới** (cách phần cũ một khoảng bằng thời gian giữ lệnh). Phần này không được dùng để chọn.
+3. Con số hiển thị là tỷ lệ chạm TP1 trước SL trên phần dữ liệu mới. Mẫu nhỏ được kéo về mức hòa vốn để tránh con số ảo.
+4. App chỉ khuyên vào lệnh khi tỷ lệ đó **vượt mức hòa vốn của chiến lược** và **kỳ vọng dương**, không có rủi ro nghiêm trọng (ví dụ giá thanh lý trước SL).
+
+Lý do tách hai phần: thử 6 chiến lược rồi báo luôn kết quả của cái tốt nhất trên cùng dữ liệu sẽ cho con số đẹp ảo nhờ may mắn.
+Mục **So sánh 6 chiến lược** (thu gọn dưới tỷ lệ thắng) cho thấy kết quả của từng chiến lược ở cả hai phần.
+
+Funding, Open Interest, tỷ lệ Long/Short, tâm lý và tin tức không có dữ liệu quá khứ đủ dài, nên phần kiểm tra chỉ dùng các yếu tố giá;
+các yếu tố kia vẫn dùng để cảnh báo rủi ro. Quá khứ không đảm bảo tương lai.
 
 ### Fed và vĩ mô
 
@@ -92,7 +107,8 @@ App cảnh báo khi kế hoạch không còn đúng (giá lệch khỏi entry, �
 ## Trang Gợi ý
 
 Quét 50 coin có khối lượng giao dịch 24h lớn nhất trên Binance Futures (chỉ hợp đồng crypto; bỏ stablecoin, vàng token hóa,
-chỉ số và cổ phiếu), chạy phân tích + kiểm tra lịch sử cho từng coin, rồi đưa ra **2 coin có tỷ lệ thắng trong quá khứ cao nhất**.
+chỉ số và cổ phiếu), chọn và kiểm tra chiến lược cho từng coin như trên, rồi đưa ra **2 coin có tỷ lệ thắng vượt mức hòa vốn nhiều nhất**
+(xếp theo mức vượt chứ không theo tỷ lệ thô, vì chiến lược chốt 1R tự nhiên có tỷ lệ cao hơn chiến lược chốt 2R).
 Coin đạt điều kiện được ưu tiên; nếu chưa đủ 2 coin đạt, chỗ còn lại là coin gần nhất và ghi rõ "Bỏ qua".
 
 - Khoảng 15 giây. App tự giới hạn tốc độ gọi Binance (dưới 1.600/2.400 điểm mỗi phút) để không bị chặn,

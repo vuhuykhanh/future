@@ -2,14 +2,14 @@
 // and ranks them by how often signals like today's reached TP1 before SL in the past.
 import { topCoins, fetchShared, fetchMarketBundle } from './data.js';
 import { analyze } from './engine.js';
-import { backtest } from './backtest.js';
+import { selectStrategy } from './backtest.js';
 
 const WORKERS = 4;
 
 function summarize(r, coin) {
   return {
     symbol: r.meta.symbol, base: r.meta.base, decimals: r.meta.decimals, volumeRank: coin.rank,
-    side: r.side, p: r.prob, evR: r.evR, verified: !!r.history,
+    side: r.side, p: r.prob, be: r.be, evR: r.evR, verified: !!r.history, strategy: r.strategy?.name ?? null,
     wins: r.history?.wins ?? null, n: r.history?.n ?? null,
     verdict: r.verdict.code, label: r.verdict.label, reason: r.verdict.reason,
     price: r.price, change24h: +coin.ticker.priceChangePercent,
@@ -19,8 +19,10 @@ function summarize(r, coin) {
 // Same bar as the analysis page: only a "Có thể vào" or "Đặt lệnh chờ" verdict counts as a pick.
 export const passes = (x) => x.verified && x.verdict !== 'NO';
 
+// Strategies have different breakevens (a 1R target needs 50%, a 2R target 33%), so rank by how far the
+// tested win rate clears its own breakeven rather than by the raw rate.
 export function sortResults(list) {
-  return [...list].sort((a, b) => Number(b.verified) - Number(a.verified) || b.p - a.p || b.evR - a.evR);
+  return [...list].sort((a, b) => Number(b.verified) - Number(a.verified) || (b.p - b.be) - (a.p - a.be) || b.evR - a.evR);
 }
 
 export async function scanTop({ style, leverage, margin, learning, calib, count = 50, onProgress, signal }) {
@@ -34,10 +36,12 @@ export async function scanTop({ style, leverage, margin, learning, calib, count 
       const coin = queue.shift();
       try {
         const data = await fetchMarketBundle(coin.meta, style, shared, coin.ticker);
-        const base = { meta: coin.meta, style, leverage, margin, data, learning };
-        const side = analyze({ ...base, forcedSide: null, calib: null }).side;
-        const history = await backtest({ meta: coin.meta, style, side, hist: data.hist, learning });
-        results.push(summarize(analyze({ ...base, forcedSide: side, calib, history }), coin));
+        const selection = await selectStrategy({ meta: coin.meta, style, hist: data.hist, learning, forcedSide: null });
+        const r = analyze({
+          meta: coin.meta, style, leverage, margin, data, learning, forcedSide: null, calib,
+          history: selection.history, strategy: selection.strategy, selection,
+        });
+        results.push(summarize(r, coin));
       } catch (err) {
         failed++;
         console.warn('scan', coin.meta.symbol, err);

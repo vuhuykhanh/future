@@ -354,6 +354,17 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
 .scan-sub .v-WAIT { color: var(--warn); font-weight: 700; }
 .scan-sub .v-NO { font-weight: 700; }
 .scan-why { grid-column: 2 / -1; font-size: var(--fs-xs); color: var(--muted); }
+.strat-details { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 8px; }
+.strat-details summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--accent); padding: 4px 0; }
+.strat-details table { font-size: var(--fs-xs); margin-top: 6px; }
+.strat-details td, .strat-details th { padding: 6px; }
+.strat-details tr.chosen td { background: var(--accent-soft); }
+@media (max-width: 720px) {
+  .strat-details .cards-table tr { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 8px; }
+  .strat-details tr.chosen { background: var(--accent-soft); border-radius: 8px; }
+  .strat-details tr.chosen td { background: transparent; }
+}
+.strat-details p { margin: 6px 0 0; }
 
 /* ---------- header actions, theme, phone ---------- */
 .top-actions { display: flex; gap: 6px; align-items: center; }

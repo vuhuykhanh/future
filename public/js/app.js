@@ -1,6 +1,6 @@
 import { loadSymbols, resolveSymbol, fetchMarketBundle, topCoins } from './data.js';
-import { analyze, STYLES, FACTORS, makeFmt, pnlFor, BREAKEVEN_P } from './engine.js';
-import { backtest } from './backtest.js';
+import { analyze, STYLES, FACTORS, makeFmt, pnlFor } from './engine.js';
+import { selectStrategy } from './backtest.js';
 import { scanTop, passes, sortResults } from './scanner.js';
 import { LiveFeed } from './live.js';
 import * as J from './journal.js';
@@ -132,14 +132,15 @@ async function analyzeWith(params, { silent = false } = {}) {
   try {
     const data = await fetchMarketBundle(params.meta, params.style);
     const stats = J.computeStats(state.trades);
-    const side = params.forcedSide || analyze({ ...params, data, learning: state.learning, calib: null }).side;
-    if (!silent) $('#result .loading-step').textContent = `Đang kiểm tra tín hiệu ${side} trên ${data.hist.k.length} nến quá khứ của ${params.meta.base}…`;
-    let history = null;
+    if (!silent) $('#result .loading-step').textContent = `Đang thử 6 chiến lược trên ${data.hist.k.length} nến quá khứ của ${params.meta.base}…`;
+    let selection = null;
     try {
-      history = await backtest({ meta: params.meta, style: params.style, side, hist: data.hist, learning: state.learning });
-    } catch (err) { console.warn('backtest', err); }
-    current = analyze({ ...params, forcedSide: side, data, learning: state.learning, calib: stats.calib, history });
-    current.forcedSide = params.forcedSide;
+      selection = await selectStrategy({ meta: params.meta, style: params.style, hist: data.hist, learning: state.learning, forcedSide: params.forcedSide });
+    } catch (err) { console.warn('strategy selection', err); }
+    current = analyze({
+      ...params, data, learning: state.learning, calib: stats.calib,
+      history: selection?.history ?? null, strategy: selection?.strategy ?? null, selection,
+    });
     const y = window.scrollY;
     renderResult(current);
     if (silent) window.scrollTo(0, y);
@@ -261,12 +262,34 @@ function updateLiveClock() {
   $('#candleLeft').textContent = `${h ? `${h}:` : ''}${String(mnt).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-// "41/112 tín hiệu SHORT tương tự · 15m · 46 ngày gần nhất"
-function historyNote(r) {
+const days = (from, to) => Math.max(1, Math.round((to - from) / 86400e3));
+
+// "Chiến lược: ... · 26/61 lần chạm TP1 trước SL trong 6 ngày gần nhất (nến 15m)"
+function strategyNote(r) {
   const h = r.history;
-  const days = Math.max(1, Math.round((h.to - h.from) / 86400e3));
-  const scope = h.scope === 'similar' ? `tín hiệu ${r.side} tương tự` : h.scope === 'side' ? `tín hiệu ${r.side}` : 'tín hiệu';
-  return `${h.wins}/${h.n} ${scope} chạm TP1 trước SL · nến ${r.style.tf} · ${days} ngày gần nhất`;
+  return `Chiến lược: <b>${esc(r.strategy.name)}</b>. ${h.wins}/${h.n} lần chạm TP1 trước SL trong ${days(h.testFrom, h.testTo)} ngày gần nhất (nến ${esc(r.style.tf)}).
+    Được chọn trong 6 chiến lược dựa trên ${days(h.trainFrom, h.trainTo)} ngày trước đó.`;
+}
+
+// Collapsed by default: how each of the six strategies did, and which one is in use.
+function strategyTable(r) {
+  const sel = r.selection;
+  if (!sel?.table) return '';
+  const R = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`);
+  const rows = sel.table.map((t) => `<tr${r.strategy?.key === t.key ? ' class="chosen"' : ''}>
+      <td class="card-title">${esc(t.name)}${r.strategy?.key === t.key ? ' <span class="chip">đang dùng</span>' : ''}</td>
+      <td data-label="Lúc này">${t.sideNow || '—'}</td>
+      <td class="n" data-label="Dữ liệu cũ: kỳ vọng">${R(t.train.avgR)}<br><span class="note">${t.train.n} lệnh</span></td>
+      <td class="n" data-label="Dữ liệu mới: thắng / cần">${t.test.n ? `${Math.round(t.test.rate * 100)}%` : '—'} / ${Math.round(t.be * 100)}%<br><span class="note">${t.test.n} lệnh · ${R(t.test.avgR)}</span></td>
+    </tr>`).join('');
+  return `<details class="strat-details"><summary>So sánh 6 chiến lược</summary>
+    <div class="table-wrap"><table class="cards-table">
+      <thead><tr><th>Chiến lược</th><th>Lúc này</th><th class="n">Dữ liệu cũ<br>kỳ vọng</th><th class="n">Dữ liệu mới<br>thắng / cần</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p class="note">Chiến lược được chọn theo kỳ vọng trên dữ liệu cũ, trong số những chiến lược đang có tín hiệu.
+      Cột dữ liệu mới không dùng để chọn, chỉ để kiểm tra.</p>
+  </details>`;
 }
 
 const RISK_LABEL = { critical: 'Nghiêm trọng', high: 'Cao', medium: 'Vừa', low: 'Thấp' };
@@ -277,8 +300,9 @@ function renderResult(r) {
   const { plan } = r;
   const m = plan.money;
   const sideCls = r.side === 'LONG' ? 'long' : 'short';
-  const breakeven = BREAKEVEN_P;
+  const breakeven = r.be;
   const probColor = r.prob > breakeven ? 'var(--long)' : 'var(--short)';
+  const noStrategy = r.selection && !r.strategy;
 
   const levels = [
     { key: 'tp', label: 'TP2', sub: 'chốt 50% còn lại', price: plan.tp2, pnl: m.pnlTp2 / 2 + m.pnlTp1 / 2 },
@@ -314,13 +338,16 @@ function renderResult(r) {
       <label class="toggle verdict-toggle"><input type="checkbox" id="autoRefresh" ${autoRefresh ? 'checked' : ''}><span>Tự phân tích lại mỗi khi đóng nến ${esc(r.style.tf)}</span></label>
     </div>
     <div class="gauge">
-      <span class="eyebrow">${r.history ? 'Tỷ lệ thắng trong quá khứ' : 'Xác suất ước tính (chưa kiểm chứng)'}</span>
-      <span class="gauge-num" style="color:${probColor}">${Math.round(r.prob * 100)}%</span>
+      <span class="eyebrow">${r.history ? 'Tỷ lệ thắng trên dữ liệu mới' : noStrategy ? 'Chưa có chiến lược phù hợp' : 'Xác suất ước tính (chưa kiểm chứng)'}</span>
+      ${noStrategy
+        ? `<span class="gauge-num">—</span><span class="note">${esc(r.selection.reason)}</span>`
+        : `<span class="gauge-num" style="color:${probColor}">${Math.round(r.prob * 100)}%</span>
       <div class="gauge-bar" title="Vạch dọc: mức hòa vốn ${Math.round(breakeven * 100)}%"><i style="width:${r.prob * 100}%;background:${probColor}"></i><b style="left:${breakeven * 100}%"></b></div>
-      ${r.history ? `<span class="note">${historyNote(r)}</span>` : ''}
+      ${r.history ? `<span class="note">${strategyNote(r)}</span>` : ''}
       <div class="gauge-row"><span>Cần thắng tối thiểu để hòa vốn</span><span class="num">${Math.round(breakeven * 100)}%</span></div>
       <div class="gauge-row"><span>Kỳ vọng mỗi lệnh</span><span class="num ${cls(r.evUsd)}">${usd(r.evUsd)} USDT (${r.evR >= 0 ? '+' : ''}${r.evR.toFixed(2)}R)</span></div>
-      ${r.calibNote ? `<span class="note">${esc(r.calibNote)}</span>` : ''}
+      ${r.calibNote ? `<span class="note">${esc(r.calibNote)}</span>` : ''}`}
+      ${strategyTable(r)}
     </div>
   </div>
 
@@ -790,13 +817,14 @@ const VERDICT_SHORT = { GO: 'Vào lệnh', WAIT: 'Đặt lệnh chờ', NO: 'B�
 function scanItem(x, i) {
   const ok = passes(x);
   // A high rate that still gets "Bỏ qua" needs its reason (weak signal now, liquidation risk, a learned rule...).
-  const why = !ok && x.verified && x.p > BREAKEVEN_P ? `<span class="scan-why">${esc(x.reason)}</span>` : '';
+  const why = !ok && x.verified && x.p > x.be ? `<span class="scan-why">${esc(x.reason)}</span>` : '';
   return `<li class="scan-item${ok ? '' : ' dim'}" tabindex="0" role="button" data-coin="${esc(x.base)}" aria-label="Phân tích ${esc(x.base)}">
     <span class="scan-rank">${i + 1}</span>
     <span class="scan-coin"><b>${esc(x.base)}</b><span class="pill pill-${x.side === 'LONG' ? 'long' : 'short'}">${x.side}</span></span>
-    <span class="scan-win"><b class="${ok ? 'pos' : x.p > BREAKEVEN_P ? '' : 'neg'}">${x.verified ? `${Math.round(x.p * 100)}%` : '—'}</b>
-      <small>${x.verified ? `${x.wins}/${x.n} lần` : 'chưa kiểm chứng'}</small></span>
+    <span class="scan-win"><b class="${ok ? 'pos' : x.p > x.be ? '' : 'neg'}">${x.verified ? `${Math.round(x.p * 100)}%` : '—'}</b>
+      <small>${x.verified ? `cần ${Math.round(x.be * 100)}% · ${x.wins}/${x.n}` : 'không có tín hiệu'}</small></span>
     <span class="scan-sub"><span class="v-${x.verdict}">${VERDICT_SHORT[x.verdict]}</span> · kỳ vọng ${x.evR >= 0 ? '+' : ''}${x.evR.toFixed(2)}R · 24h ${sPct(x.change24h / 100, 1)}</span>
+    ${x.strategy ? `<span class="scan-why">${esc(x.strategy)}</span>` : ''}
     ${why}
   </li>`;
 }
@@ -819,7 +847,7 @@ function renderScan() {
   const shown = [...picks, ...list.filter((x) => !passes(x))].slice(0, SCAN_SHOW);
   const banner = running ? '' : !picks.length
     ? `<div class="alert"><h3>Chưa coin nào đủ điều kiện vào lệnh</h3>
-      <p class="note">Không coin nào có tỷ lệ thắng quá khứ trên 40% kèm kỳ vọng dương. Hai coin dưới đây chỉ là gần nhất, không nên vào lệnh.</p></div>`
+      <p class="note">Không coin nào có chiến lược vượt mức hòa vốn trên dữ liệu kiểm tra kèm kỳ vọng dương. Hai coin dưới đây chỉ là gần nhất, không nên vào lệnh.</p></div>`
     : picks.length < SCAN_SHOW ? `<p class="note">Chỉ ${picks.length} coin đạt điều kiện; coin còn lại chỉ để tham khảo.</p>` : '';
   out.innerHTML = `<section class="card">
     <div class="scan-summary"><b>Top ${SCAN_SHOW} trong ${res.total} coin</b>
