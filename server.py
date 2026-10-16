@@ -175,17 +175,28 @@ def parse_alfred(raw, kind, title):
     return events
 
 
+def fetch_retry(url, attempts=3, **kwargs):
+    # ALFRED sometimes stalls a request; a fresh attempt usually goes straight through.
+    for attempt in range(attempts):
+        try:
+            return fetch_url(url, **kwargs)
+        except Exception:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(2)
+
+
 def get_events():
     with _events_lock:
         if time.time() - _events["at"] < EVENTS_TTL and _events["items"]:
             return _events
         now = datetime.now(EASTERN)
         years = {now.year, now.year + 1} if now.month >= 11 else {now.year}
-        jobs = [("FOMC", lambda: parse_fomc(fetch_url(FOMC_URL), years))]
+        jobs = [("FOMC", lambda: parse_fomc(fetch_retry(FOMC_URL), years))]
         for kind, rid, title in MACRO_RELEASES:
             for year in sorted(years):
                 url = ALFRED_URL.format(rid=rid, year=year)
-                jobs.append((kind, lambda url=url, kind=kind, title=title: parse_alfred(fetch_url(url, timeout=20, ua=ALFRED_UA), kind, title)))
+                jobs.append((kind, lambda url=url, kind=kind, title=title: parse_alfred(fetch_retry(url, timeout=15, ua=ALFRED_UA), kind, title)))
         items, errors = [], []
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             futures = [(name, pool.submit(fn)) for name, fn in jobs]
