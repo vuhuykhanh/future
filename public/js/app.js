@@ -264,32 +264,10 @@ function updateLiveClock() {
 
 const days = (from, to) => Math.max(1, Math.round((to - from) / 86400e3));
 
-// "Chiến lược: ... · 26/61 lần chạm TP1 trước SL trong 6 ngày gần nhất (nến 15m)"
+// "Chiến lược tốt nhất: ... · thắng 26/61 lần trong 6 ngày gần nhất"
 function strategyNote(r) {
   const h = r.history;
-  return `Chiến lược: <b>${esc(r.strategy.name)}</b>. ${h.wins}/${h.n} lần chạm TP1 trước SL trong ${days(h.testFrom, h.testTo)} ngày gần nhất (nến ${esc(r.style.tf)}).
-    Được chọn trong 6 chiến lược dựa trên ${days(h.trainFrom, h.trainTo)} ngày trước đó.`;
-}
-
-// Collapsed by default: how each of the six strategies did, and which one is in use.
-function strategyTable(r) {
-  const sel = r.selection;
-  if (!sel?.table) return '';
-  const R = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`);
-  const rows = sel.table.map((t) => `<tr${r.strategy?.key === t.key ? ' class="chosen"' : ''}>
-      <td class="card-title">${esc(t.name)}${r.strategy?.key === t.key ? ' <span class="chip">đang dùng</span>' : ''}</td>
-      <td data-label="Lúc này">${t.sideNow || '—'}</td>
-      <td class="n" data-label="Dữ liệu cũ: kỳ vọng">${R(t.train.avgR)}<br><span class="note">${t.train.n} lệnh</span></td>
-      <td class="n" data-label="Dữ liệu mới: thắng / cần">${t.test.n ? `${Math.round(t.test.rate * 100)}%` : '—'} / ${Math.round(t.be * 100)}%<br><span class="note">${t.test.n} lệnh · ${R(t.test.avgR)}</span></td>
-    </tr>`).join('');
-  return `<details class="strat-details"><summary>So sánh 6 chiến lược</summary>
-    <div class="table-wrap"><table class="cards-table">
-      <thead><tr><th>Chiến lược</th><th>Lúc này</th><th class="n">Dữ liệu cũ<br>kỳ vọng</th><th class="n">Dữ liệu mới<br>thắng / cần</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
-    <p class="note">Chiến lược được chọn theo kỳ vọng trên dữ liệu cũ, trong số những chiến lược đang có tín hiệu.
-      Cột dữ liệu mới không dùng để chọn, chỉ để kiểm tra.</p>
-  </details>`;
+  return `Chiến lược tốt nhất: <b>${esc(r.strategy.name)}</b> · thắng ${h.wins}/${h.n} lần trong ${days(h.testFrom, h.testTo)} ngày gần nhất`;
 }
 
 const RISK_LABEL = { critical: 'Nghiêm trọng', high: 'Cao', medium: 'Vừa', low: 'Thấp' };
@@ -347,7 +325,6 @@ function renderResult(r) {
       <div class="gauge-row"><span>Cần thắng tối thiểu để hòa vốn</span><span class="num">${Math.round(breakeven * 100)}%</span></div>
       <div class="gauge-row"><span>Kỳ vọng mỗi lệnh</span><span class="num ${cls(r.evUsd)}">${usd(r.evUsd)} USDT (${r.evR >= 0 ? '+' : ''}${r.evR.toFixed(2)}R)</span></div>
       ${r.calibNote ? `<span class="note">${esc(r.calibNote)}</span>` : ''}`}
-      ${strategyTable(r)}
     </div>
   </div>
 

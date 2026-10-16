@@ -17,8 +17,9 @@ Không cần cài thêm gì (chỉ dùng Python 3 có sẵn). Cần internet đ�
 App được đăng trên GitHub Pages (miễn phí, chạy 24/7, có HTTPS), không cần máy tính nào bật.
 
 - Mở link trên điện thoại, rồi trong Safari bấm **Chia sẻ → Thêm vào MH chính** để dùng như một app.
-  Mở trong Safari: 3 tab nằm dưới tiêu đề (để thanh công cụ nổi của Safari ở đáy màn hình không đè lên).
-  Mở từ màn hình chính: thanh điều hướng ở đáy và nút "Đã vào lệnh" nổi, vì không còn thanh của Safari.
+  Trên Android (Chrome): menu ⋮ → **Thêm vào màn hình chính / Cài đặt ứng dụng**.
+  Mở trong trình duyệt: 3 tab nằm dưới tiêu đề. Mở từ màn hình chính: thanh điều hướng ở đáy và nút "Đã vào lệnh" nổi.
+  Giao diện tự xuống dòng khi điện thoại đặt cỡ chữ lớn, không tràn ngang.
 - Giá, phân tích, kiểm tra lịch sử chạy ngay trên điện thoại (gọi thẳng Binance).
 - Tin tức và lịch FOMC/CPI/PPI do GitHub Actions lấy lại mỗi 30 phút (`.github/workflows/pages.yml` chạy `tools/build_feeds.py`).
 - **Nhật ký lệnh lưu ngay trên điện thoại**, không đưa lên GitHub. Xóa dữ liệu Safari hoặc gỡ app khỏi màn hình chính là mất,
@@ -80,7 +81,7 @@ chạy lại bộ phân tích ở từng thời điểm trong quá khứ và mô
 4. App chỉ khuyên vào lệnh khi tỷ lệ đó **vượt mức hòa vốn của chiến lược** và **kỳ vọng dương**, không có rủi ro nghiêm trọng (ví dụ giá thanh lý trước SL).
 
 Lý do tách hai phần: thử 6 chiến lược rồi báo luôn kết quả của cái tốt nhất trên cùng dữ liệu sẽ cho con số đẹp ảo nhờ may mắn.
-Mục **So sánh 6 chiến lược** (thu gọn dưới tỷ lệ thắng) cho thấy kết quả của từng chiến lược ở cả hai phần.
+Màn hình chỉ hiện chiến lược tốt nhất được chọn.
 
 Funding, Open Interest, tỷ lệ Long/Short, tâm lý và tin tức không có dữ liệu quá khứ đủ dài, nên phần kiểm tra chỉ dùng các yếu tố giá;
 các yếu tố kia vẫn dùng để cảnh báo rủi ro. Quá khứ không đảm bảo tương lai.
