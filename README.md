@@ -17,6 +17,8 @@ Không cần cài thêm gì (chỉ dùng Python 3 có sẵn). Cần internet đ�
 App được đăng trên GitHub Pages (miễn phí, chạy 24/7, có HTTPS), không cần máy tính nào bật.
 
 - Mở link trên điện thoại, rồi trong Safari bấm **Chia sẻ → Thêm vào MH chính** để dùng như một app.
+  Mở trong Safari: 3 tab nằm dưới tiêu đề (để thanh công cụ nổi của Safari ở đáy màn hình không đè lên).
+  Mở từ màn hình chính: thanh điều hướng ở đáy và nút "Đã vào lệnh" nổi, vì không còn thanh của Safari.
 - Giá, phân tích, kiểm tra lịch sử chạy ngay trên điện thoại (gọi thẳng Binance).
 - Tin tức và lịch FOMC/CPI/PPI do GitHub Actions lấy lại mỗi 30 phút (`.github/workflows/pages.yml` chạy `tools/build_feeds.py`).
 - **Nhật ký lệnh lưu ngay trên điện thoại**, không đưa lên GitHub. Xóa dữ liệu Safari hoặc gỡ app khỏi màn hình chính là mất,

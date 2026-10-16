@@ -44,6 +44,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* No double-tap zoom (pinch zoom still works): a zoomed page can be dragged sideways and makes the fixed bars look cut. */
+html { touch-action: manipulation; }
+/* Nothing may make the page wider than the screen; clip (unlike hidden) keeps position: sticky working. */
+body { overflow-x: clip; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 [hidden] { display: none !important; }
 h1, h2, h3 { text-wrap: balance; margin: 0; }
@@ -55,7 +59,7 @@ a { color: var(--accent); }
 .wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 
 /* ---------- top bar ---------- */
-.topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.topbar { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .topbar-inner { display: flex; align-items: center; gap: 24px; padding-block: 12px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: var(--fs-lg); letter-spacing: -0.01em; }
 .brand-mark { width: 24px; height: 24px; color: var(--accent); }
@@ -408,10 +412,17 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
   .topbar-inner { gap: 10px; padding-block: 8px; flex-wrap: nowrap; }
   .brand { font-size: var(--fs-md); gap: 8px; }
   .brand-mark { width: 22px; height: 22px; }
-  .top-tabs, .status { display: none; }
+  .status { display: none; }
+  /* Opened in Safari, its floating toolbar covers the bottom of the screen, so the tabs sit under the header.
+     Opened from the Home Screen there is no Safari toolbar, so the thumb-friendly bottom bar is used instead. */
+  :root:not(.standalone) .topbar-inner { flex-wrap: wrap; row-gap: 8px; }
+  :root:not(.standalone) .top-tabs { order: 3; width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  :root:not(.standalone) .top-tabs .tab { justify-content: center; padding: 8px 4px; }
+  .standalone .top-tabs { display: none; }
   .live-status { margin-left: auto; }
 
-  main.wrap { padding-block: 12px calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px); gap: 12px; }
+  main.wrap { padding-block: 12px calc(env(safe-area-inset-bottom, 0px) + 24px); gap: 12px; }
+  .standalone main.wrap { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 24px); }
   #view-analyze, #result, .col { gap: 12px; }
   .desk { gap: 12px; }
   .card { padding: 14px; gap: 10px; border-radius: 12px; }
@@ -453,10 +464,11 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
 
   /* The entry button rides at the bottom of the screen while reading the analysis, then settles at the end. */
   /* While it floats, only the button shows (no card frame around it). */
-  .enter-card { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; background: transparent; border-color: transparent; padding: 0; }
-  .enter-card .btn-enter { box-shadow: 0 6px 20px rgb(0 0 0 / 0.22); }
-  .enter-card:has(.enter-form:not([hidden])), .enter-card:not(:has(#enterBtn)) { position: static; background: var(--surface); border-color: var(--line); padding: 14px; }
-  .enter-card:has(.enter-form:not([hidden])) .btn-enter { box-shadow: none; }
+  /* Home Screen app only: the entry button floats above the bottom bar while reading (no Safari toolbar to collide with). */
+  .standalone .enter-card { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; background: transparent; border-color: transparent; padding: 0; }
+  .standalone .enter-card .btn-enter { box-shadow: 0 6px 20px rgb(0 0 0 / 0.22); }
+  .standalone .enter-card:has(.enter-form:not([hidden])), .standalone .enter-card:not(:has(#enterBtn)) { position: static; background: var(--surface); border-color: var(--line); padding: 14px; }
+  .standalone .enter-card:has(.enter-form:not([hidden])) .btn-enter { box-shadow: none; }
   .suggest li { padding: 12px; font-size: var(--fs-md); }
   .enter-row > div { display: none; }
   .enter-card .btn-enter { width: 100%; }
@@ -486,15 +498,16 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
   .toolbar .note { width: 100%; order: -1; }
   .table-wrap { margin: 0; }
 
-  .bottom-nav { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  .standalone .bottom-nav { display: grid; }
+  .bottom-nav { grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
     height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px));
-    background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+    background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
   .nav-item { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
   .nav-item svg { width: 24px; height: 24px; }
   .nav-item[aria-selected="true"] { color: var(--accent); background: transparent; box-shadow: none; }
   .nav-item .badge { position: absolute; top: 6px; left: calc(50% + 6px); }
 
-  .toast { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
+  .standalone .toast { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
   .disclaimer { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) {

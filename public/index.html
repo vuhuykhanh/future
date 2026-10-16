@@ -13,6 +13,10 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-180.png">
   <script>
+    // Opened from the Home Screen (no Safari toolbar): use the bottom tab bar. Set before first paint to avoid a jump.
+    if ((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true) {
+      document.documentElement.classList.add('standalone');
+    }
     // Apply the saved theme before first paint so the page doesn't flash the wrong colours.
     try {
       var t = localStorage.getItem('radar-futures-theme');
