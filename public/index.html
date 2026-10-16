@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radar Futures</title>
+  <meta name="theme-color" content="#eef1f5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Radar">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <script>
+    // Apply the saved theme before first paint so the page doesn't flash the wrong colours.
+    try {
+      var t = localStorage.getItem('radar-futures-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) { /* storage blocked: follow the system */ }
+    // Opened as a file: browsers block the app's modules, so explain how to open it instead of showing a broken page.
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        document.body.innerHTML =
+          '<div style="font:16px/1.6 system-ui,sans-serif;max-width:560px;margin:12vh auto;padding:0 16px">' +
+          '<h1 style="font-size:22px;margin:0 0 8px">Radar Futures cần chạy qua server</h1>' +
+          '<p>Trang đang được mở trực tiếp từ file nên trình duyệt chặn phần chạy của app. Chạy lệnh sau trong Terminal, rồi mở ' +
+          '<b>http://127.0.0.1:8765</b>:</p>' +
+          '<pre style="background:rgba(127,127,127,.15);padding:12px;border-radius:8px;overflow-x:auto">cd ~/Documents/KK/radar-futures &amp;&amp; python3 server.py</pre>' +
+          '<p>Hoặc nhấp đúp file <b>start.command</b> trong thư mục radar-futures.</p></div>';
+      });
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".55"/><path d="M12 12 L19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>Radar Futures</span>
+      </div>
+      <nav class="tabs top-tabs" role="tablist" aria-label="Trang">
+        <button class="tab" id="tab-analyze" role="tab" data-tab="analyze" aria-selected="true">Phân tích</button>
+        <button class="tab" id="tab-scan" role="tab" data-tab="scan" aria-selected="false">Gợi ý</button>
+        <button class="tab" id="tab-stats" role="tab" data-tab="stats" aria-selected="false">Thống kê <span class="badge stats-badge" hidden></span></button>
+      </nav>
+      <div class="status" id="dataStatus">Đang kết nối…</div>
+      <div class="live-status" id="liveStatus" data-state="idle" role="status"><span class="live-dot"></span><span>Live: tắt</span></div>
+      <div class="top-actions">
+        <button class="icon-btn" id="phoneBtn" type="button" title="Mở trên điện thoại" aria-label="Mở trên điện thoại" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10.5 18.5h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-btn" id="themeBtn" type="button" data-mode="auto" aria-label="Giao diện: tự động theo máy" title="Giao diện: tự động theo máy">
+          <svg class="ic-auto" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+          <svg class="ic-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="ic-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="error" id="notice" hidden>
+      <b>Thiếu mã truy cập.</b> Điện thoại chỉ đọc/ghi được nhật ký lệnh khi mở bằng mã QR hoặc đường link có <code>?key=</code>
+      hiện trên máy tính (nút hình điện thoại ở góc trên). Phân tích vẫn dùng được bình thường.
+    </div>
+
+    <section id="view-analyze" role="tabpanel" aria-labelledby="tab-analyze">
+      <form id="form" class="console" autocomplete="off">
+        <button class="console-summary" id="consoleSummary" type="button">
+          <span id="consoleSummaryText"></span><span class="console-edit">Sửa</span>
+        </button>
+        <div class="field field-coin">
+          <label for="coin">Coin</label>
+          <input id="coin" name="coin" list="symbolList" placeholder="BTC, ETH, SOL…" value="BTC" required autocapitalize="characters" autocorrect="off" spellcheck="false">
+          <datalist id="symbolList"></datalist>
+        </div>
+        <div class="field field-lev">
+          <label for="leverage">Đòn bẩy</label>
+          <div class="lev-row">
+            <input id="leverageRange" type="range" min="1" max="125" step="1" value="10" aria-label="Đòn bẩy (thanh trượt)">
+            <div class="suffix-input"><input id="leverage" name="leverage" type="number" inputmode="numeric" min="1" max="125" step="1" value="10" required><span>x</span></div>
+          </div>
+        </div>
+        <div class="field field-margin">
+          <label for="margin">Số tiền vào lệnh</label>
+          <div class="suffix-input"><input id="margin" name="margin" type="number" inputmode="decimal" min="1" step="any" value="100" required><span>USDT</span></div>
+        </div>
+        <fieldset class="field seg" id="styleSeg">
+          <legend>Phong cách</legend>
+          <label><input type="radio" name="style" value="scalp"><span>Scalp 15m</span></label>
+          <label><input type="radio" name="style" value="intraday" checked><span>Intraday 1h</span></label>
+          <label><input type="radio" name="style" value="swing"><span>Swing 4h</span></label>
+        </fieldset>
+        <fieldset class="field seg" id="sideSeg">
+          <legend>Hướng</legend>
+          <label><input type="radio" name="side" value="" checked><span>Tự động</span></label>
+          <label><input type="radio" name="side" value="LONG"><span>Long</span></label>
+          <label><input type="radio" name="side" value="SHORT"><span>Short</span></label>
+        </fieldset>
+        <button class="btn btn-primary" id="submitBtn" type="submit">Phân tích</button>
+      </form>
+      <div id="positions" hidden></div>
+      <div id="result" aria-live="polite"></div>
+    </section>
+
+    <section id="view-scan" role="tabpanel" aria-labelledby="tab-scan" hidden>
+      <div class="card scan-head">
+        <div>
+          <h3>Coin có tỷ lệ thắng cao nhất</h3>
+          <p class="note">Quét 50 coin có khối lượng giao dịch lớn nhất trên Binance Futures, chạy phân tích và kiểm tra lịch sử
+            cho từng coin, rồi đưa ra 2 coin có tỷ lệ thắng trong quá khứ cao nhất. Mất khoảng 15 giây.</p>
+        </div>
+        <div class="scan-controls">
+          <fieldset class="field seg" id="scanStyleSeg">
+            <legend>Phong cách</legend>
+            <label><input type="radio" name="scanStyle" value="scalp"><span>Scalp 15m</span></label>
+            <label><input type="radio" name="scanStyle" value="intraday" checked><span>Intraday 1h</span></label>
+            <label><input type="radio" name="scanStyle" value="swing"><span>Swing 4h</span></label>
+          </fieldset>
+          <button class="btn btn-primary" id="scanBtn" type="button">Quét top 50</button>
+        </div>
+        <div class="progress" id="scanProgress" hidden><div class="progress-bar"><i id="scanBar"></i></div><span class="note" id="scanProgressText"></span></div>
+      </div>
+      <div id="scanResults"></div>
+    </section>
+
+    <section id="view-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+      <div id="stats"></div>
+    </section>
+
+    <footer class="disclaimer">
+      Công cụ phân tích tham khảo, không phải lời khuyên đầu tư. Tỷ lệ thắng lấy từ dữ liệu quá khứ của chính coin đó và không đảm bảo cho tương lai.
+      Giao dịch đòn bẩy có thể mất toàn bộ số tiền vào lệnh. Dữ liệu: Binance USDT-M Futures, Fed, St. Louis Fed, alternative.me, CoinGecko, RSS tin tức.
+    </footer>
+  </main>
+
+  <nav class="bottom-nav" role="tablist" aria-label="Trang">
+    <button class="tab nav-item" role="tab" data-tab="analyze" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.7" opacity=".55"/><path d="M12 12l6-6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <span>Phân tích</span>
+    </button>
+    <button class="tab nav-item" role="tab" data-tab="scan" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+      <span>Gợi ý</span>
+    </button>
+    <button class="tab nav-item" role="tab" data-tab="stats" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>Thống kê</span>
+      <span class="badge stats-badge" hidden></span>
+    </button>
+  </nav>
+
+  <div class="modal" id="phoneModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="phoneTitle">
+      <h3 id="phoneTitle">Mở trên điện thoại</h3>
+      <p class="note">Điện thoại phải dùng <b>cùng mạng Wi‑Fi</b> với máy tính này, và máy tính phải đang chạy app. Quét mã bằng camera điện thoại.</p>
+      <div class="qr" id="phoneQr"></div>
+      <code class="phone-url" id="phoneUrl"></code>
+      <p class="note">Đường link có mã khóa riêng: đừng chia sẻ cho người khác. Mở xong, trong Safari bấm <b>Chia sẻ → Thêm vào MH chính</b> để dùng như một app.</p>
+      <div class="modal-actions">
+        <button class="btn" id="copyPhoneUrl" type="button">Sao chép link</button>
+        <button class="btn btn-primary" type="button" data-close>Xong</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <input type="file" id="importFile" accept="application/json" hidden>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
