@@ -78,8 +78,11 @@
         </button>
         <div class="field field-coin">
           <label for="coin">Coin</label>
-          <input id="coin" name="coin" list="symbolList" placeholder="BTC, ETH, SOL…" value="BTC" required autocapitalize="characters" autocorrect="off" spellcheck="false">
-          <datalist id="symbolList"></datalist>
+          <div class="ac">
+            <input id="coin" name="coin" placeholder="BTC, ETH, SOL…" value="BTC" required autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="coinSuggest">
+            <ul class="suggest" id="coinSuggest" role="listbox" hidden></ul>
+          </div>
         </div>
         <div class="field field-lev">
           <label for="leverage">Đòn bẩy</label>

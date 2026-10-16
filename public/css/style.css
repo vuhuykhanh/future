@@ -289,7 +289,14 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
 #view-analyze { display: flex; flex-direction: column; gap: 20px; }
 #result { display: flex; flex-direction: column; gap: 20px; }
 .verdict-toggle { margin-top: 12px; }
-.enter-card { border: 2px solid var(--accent); }
+.ac { position: relative; }
+.suggest { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; max-width: min(280px, calc(100vw - 32px));
+  margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18); max-height: 300px; overflow-y: auto; }
+.suggest li { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 12px; border-radius: 7px; cursor: pointer; }
+.suggest li b { font-family: var(--font-num); font-weight: 600; }
+.suggest li small { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.suggest li:hover, .suggest li.active { background: var(--surface-2); }
 .enter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .enter-row p { margin: 4px 0 0; }
 /* --surface is white in light mode and near-black in dark mode, so the label stays readable on both button fills. */
@@ -301,7 +308,6 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
 .enter-form .live-warn { margin: 0; }
 .enter-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto; gap: 12px; align-items: end; }
 .enter-done { margin: 0; color: var(--long); font-weight: 600; }
-.positions { border-color: var(--accent); }
 .positions td { vertical-align: middle; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .btn-close { border-color: var(--ink); font-weight: 700; }
@@ -435,8 +441,12 @@ td.n, th.n { text-align: right; font-family: var(--font-num); font-variant-numer
   .kv dd.big { font-size: var(--fs-md); }
 
   /* The entry button rides at the bottom of the screen while reading the analysis, then settles at the end. */
-  .enter-card { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; box-shadow: 0 -6px 24px rgb(0 0 0 / 0.12); }
-  .enter-card:has(.enter-form:not([hidden])), .enter-card:not(:has(#enterBtn)) { position: static; box-shadow: none; }
+  /* While it floats, only the button shows (no card frame around it). */
+  .enter-card { position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; background: transparent; border-color: transparent; padding: 0; }
+  .enter-card .btn-enter { box-shadow: 0 6px 20px rgb(0 0 0 / 0.22); }
+  .enter-card:has(.enter-form:not([hidden])), .enter-card:not(:has(#enterBtn)) { position: static; background: var(--surface); border-color: var(--line); padding: 14px; }
+  .enter-card:has(.enter-form:not([hidden])) .btn-enter { box-shadow: none; }
+  .suggest li { padding: 12px; font-size: var(--fs-md); }
   .enter-row > div { display: none; }
   .enter-card .btn-enter { width: 100%; }
 

@@ -1,4 +1,4 @@
-import { loadSymbols, resolveSymbol, fetchMarketBundle } from './data.js';
+import { loadSymbols, resolveSymbol, fetchMarketBundle, topCoins } from './data.js';
 import { analyze, STYLES, FACTORS, makeFmt, pnlFor, BREAKEVEN_P } from './engine.js';
 import { backtest } from './backtest.js';
 import { scanTop, passes, sortResults } from './scanner.js';
@@ -107,7 +107,7 @@ async function runAnalysis(e) {
   if (!(leverage >= 1 && leverage <= 125)) { out.innerHTML = `<div class="error">Đòn bẩy phải từ 1x đến 125x.</div>`; return; }
   if (!(margin > 0)) { out.innerHTML = `<div class="error">Nhập số tiền vào lệnh lớn hơn 0 USDT.</div>`; return; }
   if (!symbols.length) {
-    try { symbols = await loadSymbols(); fillDatalist(); }
+    try { symbols = await loadSymbols(); }
     catch (err) { out.innerHTML = `<div class="error"><b>Không kết nối được Binance Futures.</b> ${esc(err.message)}. Kiểm tra mạng (một số nhà mạng/quốc gia chặn Binance, có thể cần VPN).</div>`; return; }
   }
   const meta = resolveSymbol(coin, symbols);
@@ -896,9 +896,72 @@ $('#scanResults').addEventListener('keydown', (e) => {
 });
 
 // ---------- wiring ----------
-function fillDatalist() {
-  $('#symbolList').innerHTML = symbols.map((s) => `<option value="${esc(s.base)}"></option>`).join('');
+// ---------- coin suggestions while typing (the browser's own datalist does not show on iPhone) ----------
+const coinAc = { volumeRank: null, items: [], active: -1 };
+
+async function loadVolumeRank() {
+  if (coinAc.volumeRank) return;
+  coinAc.volumeRank = new Map();
+  try { (await topCoins(1000)).forEach((c, i) => coinAc.volumeRank.set(c.meta.base, i + 1)); } catch { /* fall back to A–Z */ }
 }
+
+function coinMatches(query) {
+  const q = query.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/USDT$/, '');
+  const rank = (s) => coinAc.volumeRank?.get(s.base) ?? 9999;
+  const name = (s) => s.base.replace(/^1000+/, ''); // 1000PEPE is found by typing "pepe"
+  return symbols
+    .filter((s) => s.kind === 'COIN')
+    .map((s) => ({ s, score: !q ? 0 : name(s).startsWith(q) || s.base.startsWith(q) ? 0 : name(s).includes(q) ? 1 : 2 }))
+    .filter((x) => x.score < 2)
+    .sort((a, b) => a.score - b.score || rank(a.s) - rank(b.s) || a.s.base.localeCompare(b.s.base))
+    .slice(0, 8)
+    .map((x) => x.s);
+}
+
+function showSuggest() {
+  const list = $('#coinSuggest');
+  coinAc.items = coinMatches($('#coin').value);
+  coinAc.active = -1;
+  list.innerHTML = coinAc.items.map((s, i) => `<li role="option" id="coin-opt-${i}" data-base="${esc(s.base)}">
+    <b>${esc(s.base)}</b>${coinAc.volumeRank?.has(s.base) ? `<small>khối lượng hạng ${coinAc.volumeRank.get(s.base)}</small>` : ''}</li>`).join('');
+  list.hidden = !coinAc.items.length;
+  $('#coin').setAttribute('aria-expanded', String(!list.hidden));
+}
+
+function hideSuggest() {
+  $('#coinSuggest').hidden = true;
+  $('#coin').setAttribute('aria-expanded', 'false');
+}
+
+function pickCoin(base) {
+  $('#coin').value = base;
+  hideSuggest();
+}
+
+$('#coin').addEventListener('focus', () => { loadVolumeRank().then(() => { if (document.activeElement === $('#coin')) showSuggest(); }); showSuggest(); });
+$('#coin').addEventListener('input', showSuggest);
+$('#coin').addEventListener('blur', () => setTimeout(hideSuggest, 150));
+$('#coin').addEventListener('keydown', (e) => {
+  if ($('#coinSuggest').hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    coinAc.active = (coinAc.active + (e.key === 'ArrowDown' ? 1 : -1) + coinAc.items.length) % coinAc.items.length;
+    for (const [i, li] of [...$('#coinSuggest').children].entries()) li.classList.toggle('active', i === coinAc.active);
+    $('#coin').setAttribute('aria-activedescendant', `coin-opt-${coinAc.active}`);
+  } else if (e.key === 'Enter' && coinAc.active >= 0) {
+    e.preventDefault();
+    pickCoin(coinAc.items[coinAc.active].base);
+  } else if (e.key === 'Escape') {
+    hideSuggest();
+  }
+});
+// pointerdown fires before the input loses focus, so the tap is not swallowed by the blur handler.
+$('#coinSuggest').addEventListener('pointerdown', (e) => {
+  const li = e.target.closest('[data-base]');
+  if (!li) return;
+  e.preventDefault();
+  pickCoin(li.dataset.base);
+});
 
 $('#leverageRange').addEventListener('input', (e) => { $('#leverage').value = e.target.value; });
 $('#leverage').addEventListener('input', (e) => { $('#leverageRange').value = e.target.value; });
@@ -993,7 +1056,6 @@ document.addEventListener('visibilitychange', async () => {
   setupPhoneButton();
   try {
     symbols = await loadSymbols();
-    fillDatalist();
     $('#dataStatus').textContent = `${symbols.length} hợp đồng USDT-M`;
   } catch {
     $('#dataStatus').textContent = 'Không kết nối được Binance';
